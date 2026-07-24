@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { reportService } from '../../Services/report.service';
 import './ReportModal.css'; // Create this CSS file
 
-const ReportModal = ({ isOpen, onClose, forms }) => {
+const ReportModal = ({ isOpen, onClose, forms, dateFields, dateFieldLabel }) => {
   const [reportType, setReportType] = useState('excel');
   const [reportPeriod, setReportPeriod] = useState('all');
   const [startDate, setStartDate] = useState('');
@@ -12,20 +12,20 @@ const ReportModal = ({ isOpen, onClose, forms }) => {
   // Helper function to get count for any period
   const getCountForPeriod = (period) => {
     if (!forms || forms.length === 0) return 0;
-    return reportService.filterDataByPeriod(forms, period, startDate, endDate)?.length || 0;
+    return reportService.filterDataByPeriod(forms, period, startDate, endDate, dateFields)?.length || 0;
   };
 
   // Memoized filtered count for selected period
   const filteredCount = useMemo(() => {
     return getCountForPeriod(reportPeriod);
-  }, [forms, reportPeriod, startDate, endDate]);
+  }, [forms, reportPeriod, startDate, endDate, dateFields]);
 
   if (!isOpen) return null;
 
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const filteredData = reportService.filterDataByPeriod(forms, reportPeriod, startDate, endDate);
+      const filteredData = reportService.filterDataByPeriod(forms, reportPeriod, startDate, endDate, dateFields);
 
       if (!filteredData || filteredData.length === 0) {
         alert(`No data found for ${reportService.getPeriodLabel(reportPeriod, startDate, endDate)}!`);
@@ -174,6 +174,12 @@ const ReportModal = ({ isOpen, onClose, forms }) => {
                   {reportService.getPeriodLabel(reportPeriod, startDate, endDate)}
                 </span>
               </div>
+              {dateFieldLabel && (
+                <div className="rm-summary-row">
+                  <span className="rm-summary-label">Date Matched On</span>
+                  <span className="rm-summary-value">{dateFieldLabel}</span>
+                </div>
+              )}
               <div className="rm-summary-row rm-highlight-row">
                 <span className="rm-summary-label">Records to Export</span>
                 <span className={`rm-summary-value rm-count-value ${filteredCount === 0 ? 'rm-count-zero' : 'rm-count-positive'}`}>

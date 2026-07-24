@@ -2,22 +2,72 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "../components/common/Layout/MainLayout";
-import { parseAsUTC } from "../utils/helpers";
+import { toIstDateKey } from "../utils/helpers";
 import {toast } from "react-toastify";
-import { 
-  FiSearch, 
-  FiUser, 
+import {
+  FiSearch,
+  FiUser,
   FiBriefcase,
   FiMessageSquare,
   FiCheckCircle,
   FiXCircle,
   FiAlertCircle,
   FiEye,
+  FiCalendar,
   FiArrowLeft
 } from "react-icons/fi";
 import "./BpoHistory.css";
 
 const BASE_URL = "https://performance-dashboard-be.onrender.com";
+
+// This page lists forms the BPO has already actioned, so the date a user wants to
+// filter on is the day it was solved — bpoActionDate. createdAt is the day the
+// executive raised the form, often months earlier, so it stays a last resort for
+// older records that predate bpoActionDate being populated.
+const SOLVED_DATE_FIELDS = [
+  "bpoActionDate", "bpo_action_date",
+  "bpoSubmittedAt", "bpo_submitted_at",
+  "submittedAt", "submitted_at",
+  "solvedAt", "solved_at",
+  "reviewedAt", "reviewed_at",
+  "actionedAt", "actioned_at",
+  "updatedAt", "updated_at",
+];
+
+const CREATED_DATE_FIELDS = ["createdAt", "created_at", "date"];
+
+// Returns { key: "YYYY-MM-DD" (IST) | null, source: "solved" | "created" | null }.
+// The source is carried through so the UI can say which date it is actually
+// showing, instead of labelling a creation date as a solved date.
+const getRecordDate = (form) => {
+  for (const source of [form, form?.form, form?.bpoForm]) {
+    if (!source) continue;
+    for (const field of SOLVED_DATE_FIELDS) {
+      const key = toIstDateKey(source[field]);
+      if (key) return { key, source: "solved" };
+    }
+  }
+
+  for (const source of [form, form?.form, form?.bpoForm]) {
+    if (!source) continue;
+    for (const field of CREATED_DATE_FIELDS) {
+      const key = toIstDateKey(source[field]);
+      if (key) return { key, source: "created" };
+    }
+  }
+
+  return { key: null, source: null };
+};
+
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Formats an already-resolved "YYYY-MM-DD" key. Kept string-based on purpose:
+// re-parsing it into a Date would re-introduce the timezone shift the key avoids.
+const formatDateKey = (dateKey) => {
+  if (!dateKey) return null;
+  const [year, month, day] = dateKey.split("-");
+  return `${Number(day)} ${MONTH_LABELS[Number(month) - 1]} ${year}`;
+};
 
 function BpoHistory({ user, logout }) {
   const [historyForms, setHistoryForms] = useState([]);
@@ -75,23 +125,19 @@ function BpoHistory({ user, logout }) {
     // Date filter (Single date or Custom Range)
     if (startDate || endDate) {
       filtered = filtered.filter(form => {
-        const rawDate = form.createdAt || form.updatedAt || form.submittedAt || form.bpoSubmittedAt || form.date || form.created_at;
-        if (!rawDate) return false;
+        const itemDateStr = getRecordDate(form).key;
 
-          const itemDate = parseAsUTC(rawDate);
-          if (!itemDate || isNaN(itemDate.getTime())) return false;
-
-        // Format to YYYY-MM-DD in Asia/Kolkata timezone
-        const itemDateStr = itemDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        // No usable timestamp in the payload: keep the record rather than drop it
+        // silently. Its card renders "Date unavailable", so it is obvious why it
+        // survived the filter instead of the row just vanishing.
+        if (!itemDateStr) return true;
 
         if (startDate && endDate) {
           return itemDateStr >= startDate && itemDateStr <= endDate;
         } else if (startDate) {
           return itemDateStr >= startDate;
-        } else if (endDate) {
-          return itemDateStr <= endDate;
         }
-        return true;
+        return itemDateStr <= endDate;
       });
     }
     
@@ -141,17 +187,6 @@ function BpoHistory({ user, logout }) {
     return `status-badge ${status?.toLowerCase() || 'default'}`;
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = parseAsUTC(dateString);
-    return date ? date.toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      timeZone: 'Asia/Kolkata'
-    }) : 'N/A';
-  };
-
   return (
     <MainLayout user={user} logout={logout}>
       <div className="bpo-history">
@@ -166,7 +201,12 @@ function BpoHistory({ user, logout }) {
               Back to Dashboard
             </button>
             <h1>BPO Submission History</h1>
-            <p>View and manage all your historical submissions ({historyForms.length} total)</p>
+            <p>
+              View and manage all your historical submissions
+              {filteredForms.length === historyForms.length
+                ? ` (${historyForms.length} total)`
+                : ` (${filteredForms.length} of ${historyForms.length} shown)`}
+            </p>
           </div>
         </div>
 
@@ -238,7 +278,10 @@ function BpoHistory({ user, logout }) {
           </div>
         ) : (
           <div className="forms-grid">
-            {filteredForms.map((form) => (
+            {filteredForms.map((form) => {
+              const recordDate = getRecordDate(form);
+
+              return (
               <div
                 key={form.id}
                 className="form-card"
@@ -265,6 +308,15 @@ function BpoHistory({ user, logout }) {
                     <span className="info-value">{form.executiveName}</span>
                   </div>
 
+                  <div className="info-row">
+                    <FiCalendar className="info-icon" />
+                    <span className={`info-value ${recordDate.key ? '' : 'info-value--missing'}`}>
+                      {recordDate.key
+                        ? `${recordDate.source === "solved" ? "Solved" : "Created"} ${formatDateKey(recordDate.key)}`
+                        : "Date unavailable"}
+                    </span>
+                  </div>
+
                   <div className="card-footer">
                     <div className="team-info">
                       <span className="team-value">{form.areaName || "N/A"}</span>
@@ -276,7 +328,8 @@ function BpoHistory({ user, logout }) {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

@@ -4,7 +4,8 @@ import axios from 'axios';
 import { managerService } from '../Services/manager.service';
 import ReportModal from '../components/Management/ReportModal';
 import AttendanceDownloader from './AttendanceDownloader';
-import { parseAsUTC } from '../utils/helpers';
+import { parseAsUTC, getIstTodayKey, shiftDateKey, resolveDateKey } from '../utils/helpers';
+import { DATE_FIELDS } from '../Services/report.service';
 import './ManagementDashboard.css';
 import {toast } from "react-toastify";
 
@@ -32,6 +33,13 @@ const [showReportModal,
 
   // Derived state for the currently active tab's forms
   const forms = activeTab === 'BPO_RESOLVED' ? bpoForms : executiveForms;
+
+  // A BPO-resolved row is dated by when the BPO actioned it; an executive row by
+  // when it was created. Shared by the on-page filter and the report download so
+  // the two can never disagree about what "today" means.
+  const activeDateFields = activeTab === 'BPO_RESOLVED'
+    ? DATE_FIELDS.bpoResolved
+    : DATE_FIELDS.executive;
 
   // ── Requests Feature State ────────────────────────────────────────────────
   const [editRequests, setEditRequests] = useState([]);
@@ -139,46 +147,38 @@ const [showReportModal,
       filtered = filtered.filter(form => form.teamleadName === teamFilter);
     }
 
-    // Apply date range filter
+    // Apply date range filter — compared as "YYYY-MM-DD" keys in IST, against the
+    // timestamp that actually matters for the active tab (see activeDateFields).
     if (dateRange !== 'all') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const todayKey = getIstTodayKey();
 
-      const weekAgo = new Date(today);
-      weekAgo.setDate(weekAgo.getDate() - 7);
+      let rangeStart = null;
+      let rangeEnd = todayKey;
 
-      const monthAgo = new Date(today);
-      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      if (dateRange === 'today') {
+        rangeStart = todayKey;
+      } else if (dateRange === 'week') {
+        rangeStart = shiftDateKey(todayKey, { days: -7 });
+      } else if (dateRange === 'month') {
+        rangeStart = shiftDateKey(todayKey, { months: -1 });
+      } else if (dateRange === 'custom') {
+        rangeStart = startDate || null;
+        rangeEnd = endDate || null;
+      }
 
-      filtered = filtered.filter(form => {
-        const formDate = parseAsUTC(form.createdAt);
-        if (!formDate) return false;
-        if (dateRange === 'today') {
-          return formDate >= today;
-        } else if (dateRange === 'week') {
-          return formDate >= weekAgo;
-        } else if (dateRange === 'month') {
-          return formDate >= monthAgo;
-        } else if (dateRange === 'custom') {
-          let matches = true;
-          if (startDate) {
-            const start = new Date(startDate);
-            start.setHours(0, 0, 0, 0);
-            matches = matches && formDate >= start;
-          }
-          if (endDate) {
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            matches = matches && formDate <= end;
-          }
-          return matches;
-        }
-        return true;
-      });
+      if (rangeStart || rangeEnd) {
+        filtered = filtered.filter(form => {
+          const key = resolveDateKey(form, activeDateFields);
+          if (!key) return false;
+          if (rangeStart && key < rangeStart) return false;
+          if (rangeEnd && key > rangeEnd) return false;
+          return true;
+        });
+      }
     }
 
     setFilteredForms(filtered);
-  }, [searchTerm, statusFilter, teamFilter, dateRange, startDate, endDate, forms]);
+  }, [searchTerm, statusFilter, teamFilter, dateRange, startDate, endDate, forms, activeDateFields]);
 
   // Get unique team leads for filter
   const teamLeads = [...new Set(forms.map(form => form.teamleadName).filter(Boolean))];
@@ -903,6 +903,8 @@ const [showReportModal,
   isOpen={showReportModal}
   onClose={() => setShowReportModal(false)}
   forms={forms}
+  dateFields={activeDateFields}
+  dateFieldLabel={activeTab === 'BPO_RESOLVED' ? 'BPO Action Date' : 'Form Created Date'}
   onGenerate={() => {
     // Optional: Show success message or refresh data
     console.log('Report generated successfully');

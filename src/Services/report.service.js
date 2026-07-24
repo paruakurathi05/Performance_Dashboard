@@ -2,58 +2,60 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { getIstTodayKey, shiftDateKey, resolveDateKey, toIstDisplayParts } from "../utils/helpers";
+
+// Which timestamp a period filter should look at, in priority order.
+// BPO_RESOLVED reports are about when the BPO actioned a form, so bpoActionDate
+// leads; createdAt (when the executive raised it) is often months earlier and
+// would silently exclude everything the manager actually wants.
+export const DATE_FIELDS = {
+  bpoResolved: ['bpoActionDate', 'updatedAt', 'createdAt'],
+  executive: ['createdAt'],
+};
+
+const DEFAULT_DATE_FIELDS = DATE_FIELDS.executive;
 
 class ReportService {
-  // Filter data by date period
-  filterDataByPeriod(data, period, customStartDate = null, customEndDate = null) {
+  // Filter data by date period.
+  // `dateFields` decides which timestamp the period applies to — see DATE_FIELDS.
+  filterDataByPeriod(data, period, customStartDate = null, customEndDate = null, dateFields = DEFAULT_DATE_FIELDS) {
+    if (!Array.isArray(data)) return [];
+    if (period === 'all') return data;
+
+    const fields = dateFields?.length ? dateFields : DEFAULT_DATE_FIELDS;
+
+    let startKey = null;
+    let endKey = null;
+
     if (period === 'custom') {
-      return data.filter(item => {
-        const formDate = this._parseAsUTC(item.createdAt);
-        let matches = true;
-        if (customStartDate) {
-          const start = new Date(customStartDate);
-          start.setHours(0, 0, 0, 0);
-          matches = matches && formDate >= start;
-        }
-        if (customEndDate) {
-          const end = new Date(customEndDate);
-          end.setHours(23, 59, 59, 999);
-          matches = matches && formDate <= end;
-        }
-        return matches;
-      });
+      startKey = customStartDate || null;
+      endKey = customEndDate || null;
+      if (!startKey && !endKey) return data;
+    } else {
+      // Anchor every relative period to "today in IST" rather than the browser's
+      // local midnight, so the report matches the dates shown on screen.
+      const todayKey = getIstTodayKey();
+      endKey = todayKey;
+
+      switch (period) {
+        case 'today':    startKey = todayKey; break;
+        case '15days':   startKey = shiftDateKey(todayKey, { days: -15 }); break;
+        case '1month':   startKey = shiftDateKey(todayKey, { months: -1 }); break;
+        case '3months':  startKey = shiftDateKey(todayKey, { months: -3 }); break;
+        case '6months':  startKey = shiftDateKey(todayKey, { months: -6 }); break;
+        case 'annual':   startKey = shiftDateKey(todayKey, { years: -1 }); break;
+        default:         return data;
+      }
     }
 
-    const now = new Date();
-    const today = new Date(now.setHours(0, 0, 0, 0));
-    
-    let startDate;
-    switch(period) {
-      case 'today':
-        startDate = today;
-        break;
-      case '15days':
-        startDate = new Date(now.setDate(now.getDate() - 15));
-        break;
-      case '1month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
-        break;
-      case '3months':
-        startDate = new Date(now.setMonth(now.getMonth() - 3));
-        break;
-      case '6months':
-        startDate = new Date(now.setMonth(now.getMonth() - 6));
-        break;
-      case 'annual':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
-        break;
-      default:
-        return data;
-    }
-
+    // Whole-day string comparison on "YYYY-MM-DD" keys: no time-of-day drift and
+    // no timezone re-interpretation between the record and the selected range.
     return data.filter(item => {
-      const itemDate = this._parseAsUTC(item.createdAt);
-      return itemDate >= startDate;
+      const key = resolveDateKey(item, fields);
+      if (!key) return false;
+      if (startKey && key < startKey) return false;
+      if (endKey && key > endKey) return false;
+      return true;
     });
   }
 
@@ -75,58 +77,18 @@ class ReportService {
     };
     return labels[period] || period;
   }
-  // ✅ NEW HELPER: Parse date string as UTC
-  _parseAsUTC(dateString) {
-    if (!dateString) return null;
-    if (dateString instanceof Date) return dateString;
-    
-    let s = String(dateString).trim();
-    
-    // If it's a numeric timestamp
-    if (/^\d+$/.test(s)) {
-      return new Date(Number(s));
-    }
-    
-    // If it has timezone offset/designator (Z, +xx:xx, etc.)
-    if (s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)) {
-      return new Date(s);
-    }
-    
-    // If it's a datetime string without timezone (e.g. "2026-06-24 11:24:38" or "2026-06-24T11:24:38")
-    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(s)) {
-      s = s.replace(' ', 'T');
-      if (!s.endsWith('Z')) {
-        s += 'Z';
-      }
-    }
-    
-    return new Date(s);
-  }
-
-    formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    const date = this._parseAsUTC(dateString);
-    if (!date) return 'N/A';
-    return date.toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Kolkata'
-    });
+  // Both formatters go through toIstDisplayParts, the same rule the period filter
+  // uses. That keeps an exported row from ever showing a date the filter didn't
+  // actually match on — e.g. a naive evening timestamp printing as the next day.
+  formatDate(dateString) {
+    const parts = toIstDisplayParts(dateString);
+    if (!parts) return 'N/A';
+    return parts.time ? `${parts.date}, ${parts.time}` : parts.date;
   }
 
   formatDateOnly(dateString) {
-    if (!dateString) return 'N/A';
-    const date = this._parseAsUTC(dateString);
-    if (!date) return 'N/A';
-    return date.toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      timeZone: 'Asia/Kolkata'
-    });
+    const parts = toIstDisplayParts(dateString);
+    return parts ? parts.date : 'N/A';
   }
 
 generateAttendanceExcel(attendanceData, executiveName, startDate, endDate) {
@@ -255,7 +217,9 @@ generateAttendanceExcel(attendanceData, executiveName, startDate, endDate) {
 
       default: // management
         return data.map(f => ({
-          "Date & Time": this.formatDate(f.createdAt),
+          // Named explicitly: in a BPO-resolved report this is NOT the date the
+          // rows were filtered on — "BPO Action Date" below is.
+          "Form Created Date": this.formatDate(f.createdAt),
           "Shop Name": f.vendorShopName || 'N/A',
           "Vendor Name": f.vendorName || 'N/A',
           "Contact Number": f.contactNumber || 'N/A',

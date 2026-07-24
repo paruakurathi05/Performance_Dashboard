@@ -27,6 +27,94 @@ export const parseAsUTC = (dateString) => {
   return new Date(s);
 };
 
+/**
+ * Returns the calendar day of a timestamp as "YYYY-MM-DD", i.e. the exact shape
+ * an <input type="date"> holds, so the two can be compared as plain strings.
+ *
+ * Values that carry an offset ("...Z", "...+05:30") are converted to IST.
+ * Values without one ("2026-07-24 19:45:00", "2026-07-24") are ambiguous, so the
+ * date part is taken literally instead of being re-interpreted as UTC — that
+ * re-interpretation adds 5h30m and pushes any evening record onto the next day.
+ */
+export const toIstDateKey = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+
+  if (!(value instanceof Date)) {
+    const naive = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})(?:[ T][\d:.]*)?$/);
+    if (naive) return naive[1];
+  }
+
+  const parsed = parseAsUTC(value);
+  if (!parsed || isNaN(parsed.getTime())) return null;
+
+  return parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+};
+
+/** Today's date in IST as "YYYY-MM-DD". */
+export const getIstTodayKey = () =>
+  new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+/**
+ * Shifts a "YYYY-MM-DD" key by whole days/months/years and returns a key.
+ * Uses UTC internally so it never trips over the browser's own timezone or DST.
+ */
+export const shiftDateKey = (dateKey, { days = 0, months = 0, years = 0 } = {}) => {
+  if (!dateKey) return null;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const dt = new Date(Date.UTC(year, month - 1, day));
+
+  if (years) dt.setUTCFullYear(dt.getUTCFullYear() + years);
+  if (months) dt.setUTCMonth(dt.getUTCMonth() + months);
+  if (days) dt.setUTCDate(dt.getUTCDate() + days);
+
+  return dt.toISOString().slice(0, 10);
+};
+
+/**
+ * Resolves a record's date key by trying `fields` in priority order, so a caller
+ * can say "use the BPO action date, fall back to created" in one place.
+ */
+export const resolveDateKey = (item, fields = []) => {
+  if (!item) return null;
+  for (const field of fields) {
+    const key = toIstDateKey(item[field]);
+    if (key) return key;
+  }
+  return null;
+};
+
+/**
+ * Renders a timestamp for display, using the same naive-vs-offset rule as
+ * toIstDateKey so what a user reads always matches what the filters matched.
+ * Returns { date: "DD/MM/YYYY", time: "HH:MM" | null } or null.
+ */
+export const toIstDisplayParts = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+
+  if (!(value instanceof Date)) {
+    const naive = String(value).trim()
+      .match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?[\d:.]*$/);
+    if (naive) {
+      const [, year, month, day, hour, minute] = naive;
+      return { date: `${day}/${month}/${year}`, time: hour ? `${hour}:${minute}` : null };
+    }
+  }
+
+  const parsed = parseAsUTC(value);
+  if (!parsed || isNaN(parsed.getTime())) return null;
+
+  const key = parsed.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const [year, month, day] = key.split('-');
+  return {
+    date: `${day}/${month}/${year}`,
+    time: parsed.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Kolkata'
+    })
+  };
+};
+
 export const formatDate = (date, formatStr = 'dd-MMM-yyyy') => {
   const parsed = parseAsUTC(date);
   return parsed ? format(parsed, formatStr) : 'N/A';

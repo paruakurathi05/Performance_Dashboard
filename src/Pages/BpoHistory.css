@@ -264,6 +264,14 @@
   font-weight: 500;
 }
 
+/* Record the API returned without any usable timestamp — it cannot be matched
+   against the date filter, so flag it instead of hiding it. */
+.info-value--missing {
+  color: #b45309;
+  font-style: italic;
+  font-weight: 600;
+}
+
 .reviews {
   margin: 16px 0;
   padding: 12px;
