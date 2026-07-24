@@ -8,7 +8,15 @@ import { FiSearch } from "react-icons/fi";
 
 const BASE_URL = "https://performance-dashboard-be.onrender.com";
 
-function BpoDashBoard() {
+function BpoDashBoard({ user, logout }) {
+  const currentUser = user || (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user"));
+    } catch (e) {
+      return null;
+    }
+  })();
+
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -22,12 +30,19 @@ function BpoDashBoard() {
   const [selectedFormForReview, setSelectedFormForReview] = useState(null);
   const [executiveReview, setExecutiveReview] = useState("");
   const [vendorReview, setVendorReview] = useState("");
-  const [idNumber, setIdNumber] = useState("");
-  const [bpoName, setBpoName] = useState("");
+  const [idNumber, setIdNumber] = useState(currentUser?.userCode || "");
+  const [bpoName, setBpoName] = useState(currentUser?.name || "");
   const [selectedAction, setSelectedAction] = useState("SOLVED");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(null);
+
+  useEffect(() => {
+    if (currentUser) {
+      if (!idNumber && currentUser.userCode) setIdNumber(currentUser.userCode);
+      if (!bpoName && currentUser.name) setBpoName(currentUser.name);
+    }
+  }, [user]);
 
   // Onboarding Readiness States
   const [vendorReady, setVendorReady] = useState(false);
@@ -182,8 +197,8 @@ function BpoDashBoard() {
         setSelectedFormForReview(null);
         setExecutiveReview("");
         setVendorReview("");
-        setIdNumber("");
-        setBpoName("");
+        setIdNumber(currentUser?.userCode || "");
+        setBpoName(currentUser?.name || "");
         setSelectedAction("SOLVED");
         setVendorReady(false);
         setOnboardInDays(0);
@@ -215,9 +230,8 @@ function BpoDashBoard() {
     setSelectedFormForReview(form);
     setExecutiveReview("");
     setVendorReview("");
-    setIdNumber("");
-    setBpoName("");
-    setBpoName("");
+    setIdNumber(currentUser?.userCode || "");
+    setBpoName(currentUser?.name || "");
     setSelectedAction("SOLVED");
     setVendorReady(false);
     setOnboardInDays(0);
@@ -232,9 +246,8 @@ function BpoDashBoard() {
     setSelectedFormForReview(null);
     setExecutiveReview("");
     setVendorReview("");
-    setIdNumber("");
-    setBpoName("");
-    setBpoName("");
+    setIdNumber(currentUser?.userCode || "");
+    setBpoName(currentUser?.name || "");
     setSelectedAction("SOLVED");
     setVendorReady(false);
     setOnboardInDays(0);
@@ -261,8 +274,8 @@ function BpoDashBoard() {
       vendorLocation: req.vendorLocation || "",
       latitude: req.latitude || "",
       longitude: req.longitude || "",
-      idNumber: req.idNumber || "",
-      bpoName: req.bpoName || "",
+      idNumber: req.idNumber || currentUser?.userCode || "",
+      bpoName: req.bpoName || currentUser?.name || "",
       executiveReview: req.executiveReview || "",
       vendorReview: req.vendorReview || "",
       action: req.action || "SOLVED"
@@ -382,7 +395,7 @@ function BpoDashBoard() {
   };
 
   return (
-    <MainLayout>
+    <MainLayout user={user || currentUser} logout={logout}>
       <div className="bpo-dashboard">
         {/* Header Section */}
         <div className="dashboard-header">

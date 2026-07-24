@@ -27,10 +27,18 @@ const MainLayout = ({ children, user, logout }) => {
     }
   };
 
-  // Get user display info from the user object (which comes from API)
-  const displayName = user?.name || user?.userCode || 'User';
-  const userCode = user?.userCode || '';
-  const userRole = user?.role || 'Guest';
+  // Get user display info from the user object (which comes from API or localStorage)
+  const currentUser = user || (() => {
+    try {
+      return JSON.parse(localStorage.getItem('user'));
+    } catch (e) {
+      return null;
+    }
+  })();
+
+  const displayName = currentUser?.name || currentUser?.userCode || 'User';
+  const userCode = currentUser?.userCode || '';
+  const userRole = currentUser?.role || 'Guest';
 
   return (
     <div className="dashboard-container">
@@ -61,7 +69,7 @@ const MainLayout = ({ children, user, logout }) => {
                       <span className="user-separator">•</span>
                     </>
                   )}
-                  <span className={`user-role role-${userRole.toLowerCase()}`}>{userRole}</span>
+                  <span className={`user-role role-${userRole.toLowerCase()}`}>{userRole.toUpperCase()}</span>
                 </div>
               </div>
             </div>

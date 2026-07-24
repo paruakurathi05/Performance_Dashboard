@@ -19,7 +19,7 @@ import "./BpoHistory.css";
 
 const BASE_URL = "https://performance-dashboard-be.onrender.com";
 
-function BpoHistory() {
+function BpoHistory({ user, logout }) {
   const [historyForms, setHistoryForms] = useState([]);
   const [filteredForms, setFilteredForms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,8 @@ function BpoHistory() {
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const navigate = useNavigate();
 
   const fetchHistory = async () => {
@@ -50,7 +51,7 @@ function BpoHistory() {
     fetchHistory();
   }, []);
 
-  // Filter forms based on search, status, and date
+  // Filter forms based on search, status, and date range
   useEffect(() => {
     let filtered = [...historyForms];
     
@@ -59,7 +60,8 @@ function BpoHistory() {
       filtered = filtered.filter(form => 
         form.vendorShopName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         form.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        form.executiveName?.toLowerCase().includes(searchTerm.toLowerCase())
+        form.executiveName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        form.id?.toString().includes(searchTerm)
       );
     }
     
@@ -70,20 +72,31 @@ function BpoHistory() {
       );
     }
     
-    // Date filter
-    if (dateFilter) {
+    // Date filter (Single date or Custom Range)
+    if (startDate || endDate) {
       filtered = filtered.filter(form => {
-        if (!form.createdAt) return false;
-        const formDate = parseAsUTC(form.createdAt);
-        const filterDate = new Date(dateFilter);
-        const formDateStr = formDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-        const filterDateStr = filterDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-        return formDateStr === filterDateStr;
+        const rawDate = form.createdAt || form.updatedAt || form.submittedAt || form.bpoSubmittedAt || form.date || form.created_at;
+        if (!rawDate) return false;
+
+          const itemDate = parseAsUTC(rawDate);
+          if (!itemDate || isNaN(itemDate.getTime())) return false;
+
+        // Format to YYYY-MM-DD in Asia/Kolkata timezone
+        const itemDateStr = itemDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+        if (startDate && endDate) {
+          return itemDateStr >= startDate && itemDateStr <= endDate;
+        } else if (startDate) {
+          return itemDateStr >= startDate;
+        } else if (endDate) {
+          return itemDateStr <= endDate;
+        }
+        return true;
       });
     }
     
     setFilteredForms(filtered);
-  }, [searchTerm, statusFilter, dateFilter, historyForms]);
+  }, [searchTerm, statusFilter, startDate, endDate, historyForms]);
 
   const handleRequestManager = async () => {
     if (!bpoReason.trim()) {
@@ -140,7 +153,7 @@ function BpoHistory() {
   };
 
   return (
-    <MainLayout>
+    <MainLayout user={user} logout={logout}>
       <div className="bpo-history">
         {/* Header Section */}
         <div className="history-header">
@@ -184,10 +197,31 @@ function BpoHistory() {
             <div className="filter-date">
               <input
                 type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                title="Start Date"
+                placeholder="From"
               />
             </div>
+            <div className="filter-date">
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                title="End Date"
+                placeholder="To"
+                min={startDate || undefined}
+              />
+            </div>
+            {(startDate || endDate) && (
+              <button
+                className="clear-date-btn"
+                onClick={() => { setStartDate(""); setEndDate(""); }}
+                title="Clear date filters"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
         {/* Content Section */}

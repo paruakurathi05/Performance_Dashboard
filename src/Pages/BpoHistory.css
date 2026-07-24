@@ -126,14 +126,40 @@
 
 .filter-group {
   display: flex;
-  gap: 16px;
-  flex: 0 0 auto; /* prevent stretching */
+  gap: 12px;
+  flex: 0 0 auto;
   align-items: center;
+  flex-wrap: wrap;
 }
 
-.filter-select,
+.filter-select {
+  width: 180px;
+}
+
 .filter-date {
-  width: 180px;  /* fixed clean width */
+  width: 160px;
+}
+
+.clear-date-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid #e2e8f0;
+  background: white;
+  color: #64748b;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.clear-date-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
 }
 
 .filter-select select, .filter-date input {
